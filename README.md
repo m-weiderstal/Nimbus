@@ -26,16 +26,37 @@ Made for student and courses about internet infrastructure. If you use this in p
 
 ## Installation
 
-### Requirements
+### Download the binary (recommended)
 
-- Rust (install via [rustup](https://rustup.rs))
-- PHP (optional, only needed for `--php` mode): `sudo apt install php-cli`
+No Rust or compiler needed — just download and run.
 
-### Build and install
+**Linux x86-64** (regular PC / server):
+```bash
+sudo curl -L https://github.com/m-weiderstal/Nimbus/releases/latest/download/nimbus-linux-x86_64 \
+  -o /usr/local/bin/nimbus && sudo chmod +x /usr/local/bin/nimbus
+```
+
+**Linux ARM64** (Raspberry Pi 4 / Pi 5):
+```bash
+sudo curl -L https://github.com/m-weiderstal/Nimbus/releases/latest/download/nimbus-linux-arm64 \
+  -o /usr/local/bin/nimbus && sudo chmod +x /usr/local/bin/nimbus
+```
+
+### Build from source
+
+Requires [Rust](https://rustup.rs).
 
 ```bash
 cargo build --release
 sudo cp target/release/nimbus /usr/local/bin/nimbus
+```
+
+### PHP support (optional)
+
+Only needed if you use the `--php` flag:
+
+```bash
+sudo apt install php-cli
 ```
 
 ## Usage
