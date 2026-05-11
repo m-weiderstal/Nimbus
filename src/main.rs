@@ -1,6 +1,7 @@
 mod server;
 mod service;
 mod logger;
+mod proxy;
 
 use server::Config;
 use std::io::{self, Write};
@@ -11,6 +12,7 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     let cmd    = args.get(1).map(|s| s.as_str());
     let config = Config {
+        root:       flag(&args, "--root").unwrap_or_else(|| "/var/www".to_string()),
         production: args.windows(2).any(|w| w[0] == "--env" && w[1] == "production"),
         php:        args.iter().any(|a| a == "--php"),
     };
@@ -20,6 +22,13 @@ fn main() {
         Some("status")    => service::status(PID_FILE),
         Some("uninstall") => service::uninstall(),
         Some("help")      => print_help(),
+        Some("proxy") => {
+            let ip     = flag(&args, "-ip").unwrap_or_else(|| prompt("IP"));
+            let port   = flag(&args, "-port").unwrap_or_else(|| prompt("Port"));
+            let config = flag(&args, "-config").unwrap_or_else(|| prompt("Routes config file"));
+            let routes = proxy::load_routes(&config);
+            proxy::run(&format!("{ip}:{port}"), routes);
+        }
         Some("show-ip")   => show_ip(),
         Some("logs")      => show_logs(),
         Some("install") => {
@@ -37,7 +46,8 @@ fn main() {
             let port = flag(&args, "-port").unwrap_or_else(|| prompt("Port"));
             let addr = format!("{ip}:{port}");
             let exe  = std::env::current_exe().unwrap();
-            let mut spawn_args = vec!["--server", "-ip", &ip, "-port", &port];
+            let mut spawn_args = vec!["--server", "-ip", &ip, "-port", &port,
+                                       "--root", &config.root];
             if config.production { spawn_args.extend_from_slice(&["--env", "production"]); }
             if config.php        { spawn_args.push("--php"); }
             let child = std::process::Command::new(exe)
@@ -106,11 +116,13 @@ fn print_help() {
         "OPTIONS:\n",
         "  -ip <address>      IP to listen on  (e.g. 0.0.0.0 for all, 127.0.0.1 for local)\n",
         "  -port <number>     Port to listen on (e.g. 8080)\n",
+        "  --root <path>      Directory to serve files from (default: /var/www)\n",
         "  --php              Enable PHP support\n",
         "  --env production   Hide error details from visitors\n",
         "\n",
         "COMMANDS:\n",
         "  stop                        Stop the running server\n",
+        "  proxy -ip X -port X -config <file>   Start the reverse proxy\n",
         "  logs                        Follow the request log live\n",
         "  show-ip                     Show the IP address of this machine\n",
         "  status                      Show whether Nimbus is running\n",

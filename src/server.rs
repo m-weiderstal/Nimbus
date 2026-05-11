@@ -6,13 +6,13 @@ use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use crate::logger;
 
-const WWW_ROOT: &str = "/var/www";
 const WORKERS: usize = 8;
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct Config {
+    pub root:       String,
     pub production: bool,
-    pub php: bool,
+    pub php:        bool,
 }
 
 struct ThreadPool {
@@ -43,7 +43,7 @@ pub fn serve(bind_addr: &str, config: Config) {
     let pool = ThreadPool::new(WORKERS);
     for stream in listener.incoming() {
         match stream {
-            Ok(s) => pool.execute(s, config),
+            Ok(s) => pool.execute(s, config.clone()),
             Err(e) => eprintln!("accept error: {e}"),
         }
     }
@@ -74,7 +74,7 @@ fn handle(mut stream: TcpStream, config: Config) {
 
     let (path, query) = uri.split_once('?').unwrap_or((uri, ""));
     let rel = path.trim_start_matches('/');
-    let mut file_path = PathBuf::from(WWW_ROOT).join(rel);
+    let mut file_path = PathBuf::from(&config.root).join(rel);
 
     if file_path.is_dir() {
         file_path.push(if config.php { "index.php" } else { "index.html" });
@@ -89,7 +89,7 @@ fn handle(mut stream: TcpStream, config: Config) {
     let is_php = file_path.extension().and_then(|e| e.to_str()) == Some("php");
 
     let status = if is_php && config.php {
-        run_php(&mut stream, &file_path, method, query, config.production)
+        run_php(&mut stream, &file_path, method, query, &config.root, config.production)
     } else if is_php {
         respond(&mut stream, 404, "Not Found", "text/plain", b"Not Found");
         404
@@ -122,13 +122,13 @@ fn serve_file(stream: &mut TcpStream, file_path: &PathBuf, method: &str, product
     }
 }
 
-fn run_php(stream: &mut TcpStream, file_path: &PathBuf, method: &str, query: &str, production: bool) -> u16 {
+fn run_php(stream: &mut TcpStream, file_path: &PathBuf, method: &str, query: &str, root: &str, production: bool) -> u16 {
     let result = std::process::Command::new("php")
         .arg(file_path)
         .env("REQUEST_METHOD", method)
         .env("QUERY_STRING", query)
         .env("SCRIPT_FILENAME", file_path)
-        .env("DOCUMENT_ROOT", WWW_ROOT)
+        .env("DOCUMENT_ROOT", root)
         .output();
 
     match result {

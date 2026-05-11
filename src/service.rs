@@ -6,7 +6,7 @@ const SERVICE_FILE: &str = "/etc/systemd/system/nimbus.service";
 
 pub fn install(ip: &str, port: &str, config: Config) {
     let exe = std::env::current_exe().unwrap();
-    let mut flags = String::new();
+    let mut flags = format!(" --root {}", config.root);
     if config.php        { flags.push_str(" --php"); }
     if config.production { flags.push_str(" --env production"); }
     let content = format!(
