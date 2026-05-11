@@ -106,6 +106,7 @@ sudo nimbus uninstall
 | `nimbus show-ip` | Show the IP address of this machine |
 | `nimbus install` | Install as a systemd service that starts on boot |
 | `nimbus uninstall` | Remove from startup |
+| `nimbus proxy` | Start the reverse proxy |
 | `nimbus help` | Show help |
 
 ## Options
@@ -114,6 +115,7 @@ sudo nimbus uninstall
 |---|---|
 | `-ip <address>` | IP to listen on. Use `0.0.0.0` for all interfaces, `127.0.0.1` for local only |
 | `-port <number>` | Port to listen on (e.g. `8080`) |
+| `--root <path>` | Directory to serve files from (default: `/var/www`) |
 | `--php` | Enable PHP support. Without this flag, `.php` files return 404 |
 | `--env production` | Hide error details from visitors |
 
@@ -146,6 +148,58 @@ Put your files in `/var/www`. Nimbus will serve `index.html` (or `index.php` wit
 ```bash
 sudo mkdir -p /var/www
 echo "<h1>Hello from Nimbus</h1>" | sudo tee /var/www/index.html
+```
+
+## Reverse proxy
+
+Nimbus has a built-in host-based reverse proxy. This lets you run multiple sites on one machine, with the proxy routing each domain to its own backend server.
+
+```
+Browser → Nimbus proxy (port 80) → Nimbus site1 (port 8080) → /var/www/site1
+                                  → Nimbus site2 (port 8081) → /var/www/site2
+```
+
+### Setup
+
+**1. Create a routes config file** at `/etc/nimbus/routes.conf`:
+
+```
+# host          backend
+site1.com        127.0.0.1:8080
+site2.com        127.0.0.1:8081
+```
+
+**2. Create web roots and start a backend for each site:**
+
+```bash
+sudo mkdir -p /var/www/site1 /var/www/site2
+
+nimbus -ip 127.0.0.1 -port 8080 --root /var/www/site1
+nimbus -ip 127.0.0.1 -port 8081 --root /var/www/site2
+```
+
+**3. Start the proxy on port 80:**
+
+```bash
+sudo nimbus proxy -ip 0.0.0.0 -port 80 -config /etc/nimbus/routes.conf
+```
+
+On startup the proxy prints the loaded routes:
+
+```
+  route: site1.com → 127.0.0.1:8080
+  route: site2.com → 127.0.0.1:8081
+Proxy listening on http://0.0.0.0:80
+```
+
+The proxy automatically injects an `X-Real-IP` header with the visitor's IP address before forwarding each request to the backend.
+
+### `--root` flag
+
+By default Nimbus serves files from `/var/www`. Use `--root` to serve from a different directory:
+
+```bash
+nimbus -ip 127.0.0.1 -port 8080 --root /var/www/site1
 ```
 
 ## Architecture
