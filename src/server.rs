@@ -4,6 +4,7 @@ use std::net::{TcpListener, TcpStream};
 use std::path::{Component, PathBuf};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
+use crate::logger;
 
 const WWW_ROOT: &str = "/var/www";
 const WORKERS: usize = 8;
@@ -49,6 +50,10 @@ pub fn serve(bind_addr: &str, config: Config) {
 }
 
 fn handle(mut stream: TcpStream, config: Config) {
+    let ip = stream.peer_addr()
+        .map(|a| a.ip().to_string())
+        .unwrap_or_else(|_| "unknown".to_string());
+
     let request_line = {
         let reader = BufReader::new(&stream);
         match reader.lines().next() {
@@ -62,7 +67,9 @@ fn handle(mut stream: TcpStream, config: Config) {
     let uri    = parts.next().unwrap_or("/");
 
     if method != "GET" && method != "HEAD" {
-        return respond(&mut stream, 405, "Method Not Allowed", "text/plain", b"Method Not Allowed");
+        respond(&mut stream, 405, "Method Not Allowed", "text/plain", b"Method Not Allowed");
+        logger::log(&ip, method, uri, 405);
+        return;
     }
 
     let (path, query) = uri.split_once('?').unwrap_or((uri, ""));
@@ -74,22 +81,26 @@ fn handle(mut stream: TcpStream, config: Config) {
     }
 
     if file_path.components().any(|c| c == Component::ParentDir) {
-        return respond(&mut stream, 403, "Forbidden", "text/plain", b"Forbidden");
+        respond(&mut stream, 403, "Forbidden", "text/plain", b"Forbidden");
+        logger::log(&ip, method, path, 403);
+        return;
     }
 
     let is_php = file_path.extension().and_then(|e| e.to_str()) == Some("php");
 
-    if is_php && config.php {
-        run_php(&mut stream, &file_path, method, query, config.production);
+    let status = if is_php && config.php {
+        run_php(&mut stream, &file_path, method, query, config.production)
     } else if is_php {
-        // PHP disabled — don't serve .php source code
         respond(&mut stream, 404, "Not Found", "text/plain", b"Not Found");
+        404
     } else {
-        serve_file(&mut stream, &file_path, method, config.production);
-    }
+        serve_file(&mut stream, &file_path, method, config.production)
+    };
+
+    logger::log(&ip, method, path, status);
 }
 
-fn serve_file(stream: &mut TcpStream, file_path: &PathBuf, method: &str, production: bool) {
+fn serve_file(stream: &mut TcpStream, file_path: &PathBuf, method: &str, production: bool) -> u16 {
     match fs::read(file_path) {
         Ok(bytes) => {
             let mime = mime_for(file_path);
@@ -101,15 +112,17 @@ fn serve_file(stream: &mut TcpStream, file_path: &PathBuf, method: &str, product
             if method != "HEAD" {
                 let _ = stream.write_all(&bytes);
             }
+            200
         }
         Err(_) => {
             let msg = if production { b"Not Found".as_ref() } else { b"404 Not Found" };
             respond(stream, 404, "Not Found", "text/plain", msg);
+            404
         }
     }
 }
 
-fn run_php(stream: &mut TcpStream, file_path: &PathBuf, method: &str, query: &str, production: bool) {
+fn run_php(stream: &mut TcpStream, file_path: &PathBuf, method: &str, query: &str, production: bool) -> u16 {
     let result = std::process::Command::new("php")
         .arg(file_path)
         .env("REQUEST_METHOD", method)
@@ -121,6 +134,7 @@ fn run_php(stream: &mut TcpStream, file_path: &PathBuf, method: &str, query: &st
     match result {
         Ok(out) if out.status.success() => {
             respond(stream, 200, "OK", "text/html; charset=utf-8", &out.stdout);
+            200
         }
         Ok(out) => {
             let body: &[u8] = if production {
@@ -131,10 +145,12 @@ fn run_php(stream: &mut TcpStream, file_path: &PathBuf, method: &str, query: &st
                 &out.stderr
             };
             respond(stream, 500, "Internal Server Error", "text/plain", body);
+            500
         }
         Err(_) => {
             let msg = if production { b"An error occurred".as_ref() } else { b"PHP is not installed" };
             respond(stream, 500, "Internal Server Error", "text/plain", msg);
+            500
         }
     }
 }

@@ -1,1 +1,134 @@
-If you use this in production, you are crazy.
+# Nimbus
+
+A simple, lightweight web server written in Rust with zero external dependencies.
+
+Made for student and courses about internet infrastructure. If you use this in production, you are cray cray.
+
+```
+ _   _ _           _
+| \ | (_)_ __ ___ | |__  _   _ ___
+|  \| | | '_ ` _ \| '_ \| | | / __|
+| |\  | | | | | | | |_) | |_| \__ \
+|_| \_|_|_| |_| |_|_.__/ \__,_|___/
+                   a simple web server
+```
+
+## Features
+
+- Serves static files from `/var/www`
+- Optional PHP support
+- Thread pool — handles up to 8 concurrent requests without spawning unbounded threads
+- Runs in the background — start and stop with simple commands
+- Install as a systemd service to start automatically on boot
+- Request logging to `/var/log/nimbus.log`
+- Production mode that hides error details from visitors
+- Zero external dependencies — built entirely on Rust's standard library
+
+## Installation
+
+### Requirements
+
+- Rust (install via [rustup](https://rustup.rs))
+- PHP (optional, only needed for `--php` mode): `sudo apt install php-cli`
+
+### Build and install
+
+```bash
+cargo build --release
+sudo cp target/release/nimbus /usr/local/bin/nimbus
+```
+
+## Usage
+
+```bash
+nimbus [-ip <address>] [-port <number>] [--php] [--env production]
+```
+
+### Start the server
+
+```bash
+# Serve static HTML on all interfaces
+nimbus -ip 0.0.0.0 -port 8080
+
+# With PHP support
+nimbus -ip 0.0.0.0 -port 8080 --php
+
+# Production mode — hides error details from visitors
+nimbus -ip 0.0.0.0 -port 8080 --php --env production
+```
+
+If `-ip` or `-port` are not provided, Nimbus will prompt for them.
+
+### Stop the server
+
+```bash
+nimbus stop
+```
+
+### Auto-start on boot (systemd)
+
+```bash
+# Install as a service
+sudo nimbus install -ip 0.0.0.0 -port 8080
+
+# Remove from startup
+sudo nimbus uninstall
+```
+
+## Commands
+
+| Command | Description |
+|---|---|
+| `nimbus stop` | Stop the running server |
+| `nimbus status` | Show whether Nimbus is running and on which address |
+| `nimbus logs` | Follow the request log live |
+| `nimbus show-ip` | Show the IP address of this machine |
+| `nimbus install` | Install as a systemd service that starts on boot |
+| `nimbus uninstall` | Remove from startup |
+| `nimbus help` | Show help |
+
+## Options
+
+| Flag | Description |
+|---|---|
+| `-ip <address>` | IP to listen on. Use `0.0.0.0` for all interfaces, `127.0.0.1` for local only |
+| `-port <number>` | Port to listen on (e.g. `8080`) |
+| `--php` | Enable PHP support. Without this flag, `.php` files return 404 |
+| `--env production` | Hide error details from visitors |
+
+## Logging
+
+Requests are logged to `/var/log/nimbus.log` in the format:
+
+```
+[2026-05-11 14:23:01] 192.168.1.42 GET /index.html 200
+[2026-05-11 14:23:04] 192.168.1.42 GET /missing.html 404
+```
+
+To set up the log file without root:
+
+```bash
+sudo touch /var/log/nimbus.log
+sudo chown $USER /var/log/nimbus.log
+```
+
+Then follow it live:
+
+```bash
+nimbus logs
+```
+
+## Web root
+
+Put your files in `/var/www`. Nimbus will serve `index.html` (or `index.php` with `--php`) for directory requests.
+
+```bash
+sudo mkdir -p /var/www
+echo "<h1>Hello from Nimbus</h1>" | sudo tee /var/www/index.html
+```
+
+## Architecture
+
+Nimbus uses a fixed thread pool of 8 workers. Incoming connections are distributed via a channel — if all workers are busy, new connections queue up instead of spawning new threads. This prevents resource exhaustion under high load.
+
+PHP support works by spawning a `php` process per request and returning its output as HTML. This is simple but not suited for very high traffic — for that, a FastCGI (PHP-FPM) setup would be more appropriate.

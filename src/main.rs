@@ -1,5 +1,6 @@
 mod server;
 mod service;
+mod logger;
 
 use server::Config;
 use std::io::{self, Write};
@@ -20,6 +21,7 @@ fn main() {
         Some("uninstall") => service::uninstall(),
         Some("help")      => print_help(),
         Some("show-ip")   => show_ip(),
+        Some("logs")      => show_logs(),
         Some("install") => {
             let ip   = flag(&args, "-ip").unwrap_or_else(|| prompt("IP"));
             let port = flag(&args, "-port").unwrap_or_else(|| prompt("Port"));
@@ -65,6 +67,13 @@ fn print_banner() {
 "#);
 }
 
+fn show_logs() {
+    std::process::Command::new("tail")
+        .args(["-f", logger::LOG_FILE])
+        .status()
+        .expect("failed to run tail");
+}
+
 fn show_ip() {
     use std::net::UdpSocket;
     let socket = UdpSocket::bind("0.0.0.0:0").expect("failed to bind socket");
@@ -102,6 +111,7 @@ fn print_help() {
         "\n",
         "COMMANDS:\n",
         "  stop                        Stop the running server\n",
+        "  logs                        Follow the request log live\n",
         "  show-ip                     Show the IP address of this machine\n",
         "  status                      Show whether Nimbus is running\n",
         "  install [-ip X] [-port X] [--php] [--env production]\n",
